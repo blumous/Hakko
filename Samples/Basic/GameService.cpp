@@ -1,6 +1,7 @@
 #include "GameService.h"
 
 #include "DataHub_Interface.h"
+#include "DataHub_FileLoader.h"
 
 #include <string_view>
 
@@ -25,6 +26,7 @@ std::string_view propName;
 
 RTB_DrawTP boxDrawReq;
 DataBoxID boxDataId;
+DtB_3DGeneral boxData;
 
 RTB_DrawOPQ foxDrawReq;
 DataBoxID foxGnrDataId;
@@ -43,6 +45,8 @@ bool GameService::Init(int width, int height)
     flagR = flagL = flagU = flagD = false;
 
 
+
+    // 리소스 이름이 곧 나중에 사용할 키, 잘 보관해 두세요
     #pragma region UploadResources
 
     if (!LoadMesh(L"res/Box.obj"))
@@ -83,14 +87,17 @@ bool GameService::Init(int width, int height)
         return false;
 
     
-    RTB_UpdateResource res = {};
-    res.command = RTBCMD_UpdateResource_Upload;
+
+    RTB_UpdateResources res = {};
+    res.command = RTBCMD_Upload_Resource;
 
     SendRTB(res);
 
     #pragma endregion
 
 
+    
+    // 익히 머터리얼이라고 부르는 그겁니다
     #pragma region BuildProps
 
     TexProp tp = {};
@@ -99,7 +106,7 @@ bool GameService::Init(int width, int height)
     tp.texId[2] = GetTexId(L"None_ORM");
     tp.texId[3] = GetTexId(L"None_Emission");
 
-    AddTextureProp("boxMat", tp);
+    CreateTexProp("boxMat", tp);
 
     propName = "boxMat";
 
@@ -111,26 +118,29 @@ bool GameService::Init(int width, int height)
     tp2.texId[2] = GetTexId(L"None_ORM");
     tp2.texId[3] = GetTexId(L"None_Emission");
 
-    AddTextureProp("FoxMat", tp2);
+    CreateTexProp("FoxMat", tp2);
 
 
-    RTB_UpdateProp rtbProp;
-    rtbProp.command = RTBCMD_UpdateProp_FindOrBuild;
+
+    RTB_UpdateResources rtbProp;
+    rtbProp.command = RTBCMD_Upload_Prop;
 
     SendRTB(rtbProp);
 
     #pragma endregion
 
+    
 
+    // 화면 층을 나누고(Layer) 층별로 배경이나 기타 설정을 해줘요
     #pragma region SetLayerOption
 
-    LayerList[0].backGround.bgTexId = GetTexId(L"res/skybox.dds");
-
-    // LayerList[0].viewport = {...};
+    SetLayerBackground(GetTexId(L"res/skybox.dds"));
 
     #pragma endregion
 
 
+    
+    // 전역 데이터, 카메라나 조명 값을 설정해요
     #pragma region SetCondition
     
     auto eyePos = DirectX::XMVectorSet(3.0f, 5.0f, -10.0f, 1.0f);
@@ -145,44 +155,48 @@ bool GameService::Init(int width, int height)
     projM = DirectX::XMMatrixPerspectiveFovLH(fov, aspectRatio, nearZ, farZ);
 
 
-    DtB_Condition cond = {};
-    DirectX::XMStoreFloat3(&cond.camera_EyePos, eyePos);
-    cond.camera_View = DirectX::XMMatrixTranspose(viewM);
-    cond.camera_Proj = DirectX::XMMatrixTranspose(projM);
-    cond.camera_ViewProj = DirectX::XMMatrixMultiplyTranspose(viewM, projM);
-    cond.global_LightAmbient = DirectX::XMFLOAT4(0.2f, 0.2f, 0.2f, 1.0f);
-    cond.global_LightColor = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-    DirectX::XMStoreFloat3(&cond.global_LightDirection, DirectX::XMVector3Normalize(DirectX::XMVectorSet(-1.0f, -1.0f, 1.0f, 0.0f)));
 
-    RTB_SetCondition rtbCond;
-    rtbCond.condition = cond;
+    RTB_SetCamera rtbCam = {};
+    rtbCam.view = DirectX::XMMatrixTranspose(viewM);
+    rtbCam.proj = DirectX::XMMatrixTranspose(projM);
+    rtbCam.viewProj = DirectX::XMMatrixMultiplyTranspose(viewM, projM);
+    DirectX::XMStoreFloat3(&rtbCam.eyePos, eyePos);
 
-    SendRTB(rtbCond);
+    SendRTB(rtbCam);
+
+
+    RTB_SetGlobalLight rtbLight = {};
+    rtbLight.ambient = DirectX::XMFLOAT4(0.2f, 0.2f, 0.2f, 1.0f);
+    rtbLight.color = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+    DirectX::XMStoreFloat3(&rtbLight.direction, DirectX::XMVector3Normalize(DirectX::XMVectorSet(-1.0f, -1.0f, 1.0f, 0.0f)));
+
+    SendRTB(rtbLight);
 
     #pragma endregion
 
 
+    
+    // 렌더러에 넘겨줄수 있는 데이터를 보관해요 - 데이터는 서비스 자율 접근, 고정 아이디를 씁니다
     #pragma region StoreData
 
     auto worldM = DirectX::XMMatrixTranslationFromVector(objPos);
 
 
-    DtB_3DGeneral data = {};
-    data.worldMat = DirectX::XMMatrixTranspose(worldM);
-    data.blendColor = DirectX::XMFLOAT4{1,1,1,1};
-    data.roughness = 1;
-    data.metalic = 1;
+    boxData = DtB_3DGeneral();
+    boxData.worldMat = DirectX::XMMatrixTranspose(worldM);
+    boxData.blendColor = DirectX::XMFLOAT4{1,1,1,1};
+    boxData.roughness = 1;
+    boxData.metalic = 1;
 
-    boxDataId = AddDataBox(data);
+    boxDataId = AddDataBox(boxData);
 
 
-    foxGnrDataId = AddDataBox(data);
+    foxGnrDataId = AddDataBox(boxData);
+
 
     DtB_3DOptional bone = {};
     for (size_t i = 0; i < SKIN_BONE_MAX; i++)
-    {
         bone.boneTransforms[i] = DirectX::XMMatrixIdentity();
-    }
 
     foxOptDataId = AddDataBox(bone);
 
@@ -200,43 +214,6 @@ void GameService::Finalize()
 }
 
 
-void GameService::OnResize(int width, int height)
-{
-    Layer_Viewport viewport = {0,0,static_cast<float>(width),static_cast<float>(height)};
-
-    auto& pb = LayerList[0];
-
-    pb.viewport = viewport;
-    
-    
-    auto eyePos = DirectX::XMVectorSet(3.0f, 5.0f, -10.0f, 1.0f);
-    auto upVec = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-
-    float fov = DirectX::XMConvertToRadians(60.0f);
-    float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
-    float nearZ = 0.1f;
-    float farZ = 1000.0f;
-
-    auto viewM = DirectX::XMMatrixLookAtLH(eyePos, objPos, upVec);
-    auto projM = DirectX::XMMatrixPerspectiveFovLH(fov, aspectRatio, nearZ, farZ);
-
-
-
-    DtB_Condition cond = {};
-    DirectX::XMStoreFloat3(&cond.camera_EyePos, eyePos);
-    cond.camera_View = DirectX::XMMatrixTranspose(viewM);
-    cond.camera_Proj = DirectX::XMMatrixTranspose(projM);
-    cond.camera_ViewProj = DirectX::XMMatrixMultiplyTranspose(viewM, projM);
-    cond.global_LightAmbient = DirectX::XMFLOAT4(0.2f, 0.2f, 0.2f, 1.0f);
-    cond.global_LightColor = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-    DirectX::XMStoreFloat3(&cond.global_LightDirection, DirectX::XMVector3Normalize(DirectX::XMVectorSet(-1.0f, -1.0f, 1.0f, 0.0f)));
-
-    RTB_SetCondition rtbCond;
-    rtbCond.condition = cond;
-
-    SendRTB(rtbCond);
-}
-
 void GameService::Update()
 {
     if (flagR)
@@ -249,38 +226,58 @@ void GameService::Update()
         y -= 0.05f;
 
 
+
+    // 이전 프레임 데이터는 서비스에서 직접 비워요 (선택)
     #pragma region ClearPrevRequest
 
-    LayerList[0].actionOPQ.drawReqList.clear();
-    LayerList[0].actionTP.drawReqList.clear();
-    LayerList[0].actionSC.drawReqList.clear();
+    ClearOpaqueDrawRequests();
+    ClearTranslucentDrawRequests();
+    ClearScreenDrawRequests();
 
     #pragma endregion
 
 
+    
+    // 데이터는 마음대로 접근 가능, 저장해놓은 위치에 값 업데이트 (아이디 그대로 유지)
     #pragma region SetData
 
     objPos = {x, 0.0f, y, 1.0f};
+
     auto worldM = DirectX::XMMatrixTranslationFromVector(objPos);
 
-    DataBoxCustomizer::GetDataBoxList<DtB_3DGeneral>()[boxDataId].worldMat = DirectX::XMMatrixTranspose(worldM);
+
+    // 값 통째로 올리기
+    boxData.worldMat = DirectX::XMMatrixTranspose(worldM);
+    UpdateDataBox(boxDataId, boxData);
+
+    // 일부 칸만 바로 고치고 싶으면 리스트를 받아서 써도 돼요 (길이는 건드리지 않기)
+    // auto& generalList = DataBoxCustomizer::GetDataBoxList<DtB_3DGeneral>();
+    // generalList[boxDataId].worldMat = DirectX::XMMatrixTranspose(worldM);
 
     
+
     auto eyePos = DirectX::XMVectorSet(3.0f, 5.0f, -10.0f, 1.0f);
     auto upVec = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
     
     auto viewM = DirectX::XMMatrixLookAtLH(eyePos, objPos, upVec);
 
-    LayerList[0].condition.camera_View = viewM;
-    LayerList[0].condition.camera_View = DirectX::XMMatrixMultiplyTranspose(viewM, projM);
+
+    RTB_SetCamera rtbCam = {};
+    rtbCam.view = DirectX::XMMatrixTranspose(viewM);
+    rtbCam.proj = DirectX::XMMatrixTranspose(projM);
+    rtbCam.viewProj = DirectX::XMMatrixMultiplyTranspose(viewM, projM);
+    DirectX::XMStoreFloat3(&rtbCam.eyePos, eyePos);
+
+    SendRTB(rtbCam);
 
     #pragma endregion
 
 
+
+    // 렌더러에게 이거 가지고 그려줘 요청해요
     #pragma region DrawRequest
 
-    // 리소스 아이디는 바뀔수 있기 때문에 매 프레임 혹은 갱신 시마다 이름을 통해 얻어와야 해요
-
+    // 리소스 아이디는 항상 바뀔수 있기 때문에, 매 프레임 이름을 통해 얻어오는걸 권장
     boxDrawReq.depth = 0;
     boxDrawReq.drawProp = GetDrawPropId("Default_Translucent");
     boxDrawReq.texProp = GetTexPropId(propName);
@@ -311,6 +308,36 @@ void GameService::OnRender()
 }
 
 
+void GameService::OnResize(int width, int height)
+{
+    Layer_Viewport viewport = {0,0,static_cast<float>(width),static_cast<float>(height)};
+
+    SetLayerViewport(viewport);
+    
+    
+    
+    auto eyePos = DirectX::XMVectorSet(3.0f, 5.0f, -10.0f, 1.0f);
+    auto upVec = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+    float fov = DirectX::XMConvertToRadians(60.0f);
+    float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+    float nearZ = 0.1f;
+    float farZ = 1000.0f;
+
+    auto viewM = DirectX::XMMatrixLookAtLH(eyePos, objPos, upVec);
+    projM = DirectX::XMMatrixPerspectiveFovLH(fov, aspectRatio, nearZ, farZ);
+
+
+    RTB_SetCamera rtbCam = {};
+    rtbCam.view = DirectX::XMMatrixTranspose(viewM);
+    rtbCam.proj = DirectX::XMMatrixTranspose(projM);
+    rtbCam.viewProj = DirectX::XMMatrixMultiplyTranspose(viewM, projM);
+    DirectX::XMStoreFloat3(&rtbCam.eyePos, eyePos);
+
+    SendRTB(rtbCam);
+}
+
+
 void GameService::OnMouseMove(int x, int y)
 {
 }
@@ -326,13 +353,9 @@ void GameService::OnKeyDown(int keyCode)
     if (keyCode == (int)KeyCode::S || keyCode == (int)KeyCode::DownArrow)
         flagD = true;
     if (keyCode == (int)KeyCode::Q)
-        DataBoxCustomizer::GetDataBoxList<DtB_3DGeneral>()[boxDataId].blendColor.w != 0.0f ? 
-            DataBoxCustomizer::GetDataBoxList<DtB_3DGeneral>()[boxDataId].blendColor.w -= 0.1f :
-            0;
+        boxData.blendColor.w = boxData.blendColor.w > 0.1f ? boxData.blendColor.w - 0.1f : 0.0f;
     if (keyCode == (int)KeyCode::E)
-        DataBoxCustomizer::GetDataBoxList<DtB_3DGeneral>()[boxDataId].blendColor.w != 1.0f ? 
-            DataBoxCustomizer::GetDataBoxList<DtB_3DGeneral>()[boxDataId].blendColor.w += 0.1f :
-            0;
+        boxData.blendColor.w = boxData.blendColor.w < 0.9f ? boxData.blendColor.w + 0.1f : 1.0f;
 }
 
 void GameService::OnKeyUp(int keyCode)

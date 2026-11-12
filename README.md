@@ -20,7 +20,6 @@
 \
 (스터디 프로젝트, v0.1 은 렌더링 최소 세트)
 
-\
 
 ```
 Service Adapter ──(Resource / DataBox / RTB)──▶ DataHub ──(read per frame)──▶ Renderer (D3D12)
@@ -46,16 +45,16 @@ v0.1.0 은 그중 렌더링 레이어의 최소 세트이며
 다음 단계의 구현 목표로, MMD 뷰어 (물리 / 오디오 / 애니메이션 레이어) 를 목표하고 있습니다.
 
 \
-#### 현재 버전: **v0.1.0-preview**
+현재 버전: **v0.1.0-alpha**
 
-## 지원 범위 (v0.1.0-preview)
+## 지원 범위 (v0.1.0-alpha)
 
-| 지원 | 명시적 미지원 (요청하면 리포트 후 무시, 크래시 없음) |
+| 지원 | 명시적 미지원 (요청하면 리포트 후 무시) |
 |---|---|
-| 메쉬 로드 (assimp, 서브메쉬 / 스킨 가중치), 텍스처 로드 (WIC, DDS 큐브맵) | 애니메이션 / 본 계층 (바인드 포즈까지만) |
-| drawProp / texProp, 불투명 / 반투명 드로우, 스카이박스 / 배경판 | 2D 스크린 드로우 (타입만), 커스텀 파이프라인 (액션 노드) |
-| 레이어 합성 (8), 전역 + 로컬 조명 8칸 (PBR-lite), 환경맵 / 조명 행렬 바인딩 | 그림자 / SSAO (노드 자리만), 컴퓨트 자원 / 액션 |
-| 리사이즈 / 최소화, vsync, `RendererDesc` 한계 / 튜닝 값 | 스텐실, MSAA, 로디드 텍스처에 RT / DS 출력, `DrawProp` 의 `fillType` / `depthBias` / `DepthUsage` Equal·Always (기본값으로 동작) |
+| 메쉬 로드 (assimp, 서브메쉬 / 스킨 가중치), 텍스처 로드 (DirectXTex, WIC / DDS 큐브맵) | 애니메이션 / 본 계층 (바인드 포즈까지만) |
+| drawProp / texProp, 불투명 / 반투명 드로우, 스카이박스 / 배경 | 2D 스크린 드로우 (타입만), 커스텀 파이프라인 (액션 노드), 디퍼드 파이프라인 (포워드로 처리) |
+| 레이어 합성 (8), 전역 + 로컬 조명 8칸 (기본 셰이더 기준), 환경맵 / 조명 행렬 바인딩 | 그림자 / SSAO (노드 자리만), 컴퓨트 자원 / 액션, 위 레이어의 반투명 합성 |
+| 렌더 팩토리/어댑터: 리사이즈 / 최소화, vsync, `RendererDesc` 한계 / 튜닝 | 스텐실, MSAA, 로드된 텍스처에 RT / DS 출력 |
 
 ## 요구 사항
 
@@ -64,7 +63,7 @@ v0.1.0 은 그중 렌더링 레이어의 최소 세트이며
 - CMake 3.24 이상 (VS 2026 프리셋은 CMake 4.2 이상)
 - vcpkg (환경변수 `VCPKG_ROOT` 가 vcpkg 폴더를 가리키게, 프리셋 `$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake` 툴체인)
 
-의존성은 `vcpkg.json`, 첫 구성 때 자동으로 설치됩니다:
+의존성은 `vcpkg.json` 에 담겨있으며, 첫 구성 때 자동으로 설치됩니다:
 directx-headers, directxtex, directx-dxc, assimp
 
 > 비ASCII 경로 (한글 등) 는 기본 프리셋 (Visual Studio 제너레이터 + 정적 트리플릿) 에서는 문제없이 빌드됩니다. 
@@ -80,30 +79,37 @@ cmake --preset vs2022-x64
 cmake --build --preset release
 ```
 
-VS 2026 은 `vs2026-x64` / `release-2026` 프리셋을 쓰면 됩니다.
+VS Code 환경: CMake Tools 가 프리셋을 그대로 읽습니다.
 
-결과물은 `build/<프리셋>/Samples/Basic/<구성>/HakkoSample.exe` 이고,
+\
+VS 2026 환경: `vs2026-x64` / `release-2026` 프리셋을 사용하면 됩니다.
+
+\
+결과물은 `build/<프리셋>/Samples/Basic/<구성>/HakkoSample.exe`,
 
 디폴트 셰이더와 `dxil.dll`, 샘플 리소스는 빌드 후 단계가 실행 파일 옆에 복사합니다.
-
-VS Code 는 CMake Tools 가 프리셋을 그대로 읽습니다.
 
 ## 디렉터리
 
 ```
-Hakko/            라이브러리 (정적). 엔진에 넘기는 단위
-  Data/           데이터 허브: 리소스 / 데이터박스 / 전송체(RTB)
-  Render/         렌더러 인터페이스 + D3D12 구현 (private/D3D12/shader 에 디폴트 셰이더)
-  Core/           디바이스 / 큐 (싱글턴)
-  Service/        서비스 어댑터 (허브를 쓰는 쪽의 틀)
+Hakko/
+  Data/           데이터 허브: 리소스 / 데이터박스 / 전송체 규약 정의
+  Render/         렌더 어댑터: 렌더러 인터페이스 + D3D12 구현 (private/D3D12/shader 에 디폴트 셰이더)
+  Core/           API 관리 동작: 현재 D3D12 디바이스 / 큐 제공
+  Service/        서비스 어댑터: 현재 서비스 인터페이스만 정의
 Samples/Basic/    창 호스트 + 샘플 서비스 + 리소스
 ```
 
-각 모듈의 `public/` 만 include 경로에 잡히고 `private/` 는 라이브러리 내부용입니다.
+\
+각 모듈의 `public/` 만 include 경로, `private/` 는 라이브러리 내부용입니다.
 
-`DataHub_Interface.h` 는 선택, 편의기능 헤더 (파일 로드 + 등록을 한 번에) 이며,
+\
+데이터 허브 핵심 API는 `DataHub.h` 본체 하나만 포함하면 동작하며
 
-본체 API 는 `DataHub.h` 하나로 전부 보입니다.
+아래의 파일들은 선택 기능 헤더이므로, 필요에 따라 조정하여 사용할 수 있습니다. (의존성 분리 목적)
+
+- `DataHub_FileLoader.h`: 파일 로드 + 등록을 한 번에 (`LoadMesh` / `LoadTexture`)
+- `DataHub_Interface.h`: 사용 편의 기능, 헬퍼 모음 (`SendRTB`, 레이어 설정, 간편 요청 만들기, 요청 비우기)
 
 ## 문서
 

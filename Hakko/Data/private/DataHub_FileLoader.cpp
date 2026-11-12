@@ -52,6 +52,16 @@ namespace Hakko::DataHub
         case DXGI_FORMAT_R32_FLOAT:             return TextureReadFormat::R32_Float;
         case DXGI_FORMAT_R32G32_FLOAT:          return TextureReadFormat::RG32_Float;
         case DXGI_FORMAT_R32G32B32A32_FLOAT:    return TextureReadFormat::RGBA32_Float;
+        case DXGI_FORMAT_R16_UNORM:             return TextureReadFormat::R16_UNorm;
+        case DXGI_FORMAT_R16G16_UNORM:          return TextureReadFormat::RG16_UNorm;
+        case DXGI_FORMAT_R16G16B16A16_UNORM:    return TextureReadFormat::RGBA16_UNorm;
+        case DXGI_FORMAT_R8G8_SNORM:            return TextureReadFormat::RG8_SNorm;
+        case DXGI_FORMAT_R8G8B8A8_SNORM:        return TextureReadFormat::RGBA8_SNorm;
+        case DXGI_FORMAT_R16G16_SNORM:          return TextureReadFormat::RG16_SNorm;
+        case DXGI_FORMAT_R8_UINT:               return TextureReadFormat::R8_UInt;
+        case DXGI_FORMAT_R16_UINT:              return TextureReadFormat::R16_UInt;
+        case DXGI_FORMAT_R32_UINT:              return TextureReadFormat::R32_UInt;
+        case DXGI_FORMAT_R9G9B9E5_SHAREDEXP:    return TextureReadFormat::RGB9E5_SharedExp;
 
         case DXGI_FORMAT_BC1_UNORM:             return TextureReadFormat::BC1_UNorm;
         case DXGI_FORMAT_BC1_UNORM_SRGB:        return TextureReadFormat::BC1_SRGB;
@@ -96,13 +106,12 @@ namespace Hakko::DataHub
 
 
         Assimp::Importer importer;
-        importer.SetPropertyInteger(AI_CONFIG_PP_SLM_VERTEX_LIMIT, 65535);
         importer.SetPropertyInteger(AI_CONFIG_PP_SBP_REMOVE, aiPrimitiveType_POINT | aiPrimitiveType_LINE);
 
         const unsigned int flags =
             aiProcess_Triangulate | aiProcess_SortByPType | aiProcess_JoinIdenticalVertices |
             aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded |
-            aiProcess_SplitLargeMeshes | aiProcess_LimitBoneWeights;
+            aiProcess_LimitBoneWeights;
 
         const aiScene* scene = importer.ReadFile(path, flags);
         if (scene == nullptr || scene->mNumMeshes == 0)
@@ -162,13 +171,6 @@ namespace Hakko::DataHub
             if ((mesh->mPrimitiveTypes & aiPrimitiveType_TRIANGLE) == 0 || mesh->mNumFaces == 0 || mesh->mNumVertices == 0)
                 continue;
 
-            if (mesh->mNumVertices > 65536)
-            {
-                Internal::PushHubReport(HubReport_Load, L"[Load] 서브메쉬 정점 65536 초과 (SplitLargeMeshes 실패)");
-                OutputDebugStringW(L"[Load] 서브메쉬 정점 65536 초과 (SplitLargeMeshes 실패): "); OutputDebugStringW(filename); OutputDebugStringW(L"\n");
-                return false;
-            }
-
             SubMesh sub = {};
             sub.baseVertex = (uint32_t)(skinned ? vk.size() : vs.size());
             sub.indexStart = (uint32_t)out.indices.size();
@@ -203,11 +205,7 @@ namespace Hakko::DataHub
                 if (skinned)
                     vk.push_back(x);
                 else
-                {
-                    VertexStatic s = {};
-                    s.Pos = x.Pos; s.UV = x.UV; s.Normal = x.Normal; s.Tangent = x.Tangent; s.Color = x.Color;
-                    vs.push_back(s);
-                }
+                    vs.push_back(x);
             }
 
             for (unsigned int f = 0; f < mesh->mNumFaces; f++)
@@ -283,7 +281,28 @@ namespace Hakko::DataHub
         return true;
     }
 
-    bool ReadTextureFile(const wchar_t* filename, TextureFileFormat format, TextureType type, Texture& out)
+    static DXGI_FORMAT FallbackFormat(DXGI_FORMAT f)
+    {
+        switch (FormatDataType(f))
+        {
+        case FORMAT_TYPE_UNORM: return IsSRGB(f) ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM;
+        case FORMAT_TYPE_FLOAT: return BitsPerColor(f) > 16 ? DXGI_FORMAT_R32G32B32A32_FLOAT : DXGI_FORMAT_R16G16B16A16_FLOAT;
+        default:                return DXGI_FORMAT_UNKNOWN;
+        }
+    }
+
+    static bool ConvertImage(ScratchImage& scratch, DXGI_FORMAT target)
+    {
+        ScratchImage converted;
+        if (FAILED(Convert(scratch.GetImages(), scratch.GetImageCount(), scratch.GetMetadata(),
+                           target, TEX_FILTER_DEFAULT, TEX_THRESHOLD_DEFAULT, converted)))
+            return false;
+
+        scratch = std::move(converted);
+        return true;
+    }
+
+    bool ReadTextureFile(const wchar_t* filename, TextureFileFormat format, TextureType type, TextureColorSpace colorSpace, Texture& out)
     {
 		TexMetadata metadata = {};
 		ScratchImage scratch;
@@ -293,7 +312,7 @@ namespace Hakko::DataHub
 		{
 		default:
 		case TextureFileFormat_None:
-			hr = LoadFromWICFile(filename, WIC_FLAGS_NONE, &metadata, scratch);
+			hr = LoadFromWICFile(filename, colorSpace == TextureColorSpace_Linear ? WIC_FLAGS_IGNORE_SRGB : WIC_FLAGS_NONE, &metadata, scratch);
 			break;
 		
 		case TextureFileFormat_DDS:
@@ -313,21 +332,34 @@ namespace Hakko::DataHub
 
         TextureData texData;
 
-		texData.format = FromDXGI(metadata.format);
+        DXGI_FORMAT fmt = metadata.format;
 
-        if (texData.format == TextureReadFormat::Unknown && !IsCompressed(metadata.format))
+        if (FromDXGI(fmt) == TextureReadFormat::Unknown && !IsCompressed(fmt))
         {
-            ScratchImage converted;
-            hr = Convert(scratch.GetImages(), scratch.GetImageCount(), metadata,
-                         DXGI_FORMAT_R8G8B8A8_UNORM, TEX_FILTER_DEFAULT, TEX_THRESHOLD_DEFAULT, converted);
-
-            if (SUCCEEDED(hr))
-            {
-                scratch = std::move(converted);
-                metadata = scratch.GetMetadata();
-                texData.format = FromDXGI(metadata.format);
-            }
+            const DXGI_FORMAT target = FallbackFormat(fmt);
+            if (target != DXGI_FORMAT_UNKNOWN && ConvertImage(scratch, target))
+                fmt = target;
         }
+
+        if (colorSpace == TextureColorSpace_Linear)
+        {
+            if (IsSRGB(fmt))
+                fmt = MakeLinear(fmt);
+        }
+        else if (colorSpace == TextureColorSpace_SRGB && !IsSRGB(fmt))
+        {
+            if (MakeSRGB(fmt) != fmt)
+                fmt = MakeSRGB(fmt);
+            else if (FormatDataType(fmt) == FORMAT_TYPE_UNORM && !IsCompressed(fmt) && ConvertImage(scratch, DXGI_FORMAT_R8G8B8A8_UNORM))
+                fmt = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+            else if (FormatDataType(fmt) != FORMAT_TYPE_FLOAT)
+                Internal::PushHubReport(HubReport_Load, L"[Load] sRGB 로 받을 수 없는 포맷 (선형으로 유지)");
+        }
+
+        scratch.OverrideFormat(fmt);
+        metadata = scratch.GetMetadata();
+
+        texData.format = FromDXGI(metadata.format);
 
         if (texData.format == TextureReadFormat::Unknown)
         {
@@ -346,33 +378,28 @@ namespace Hakko::DataHub
 		texData.arraySize = metadata.arraySize;
         
         switch (type)
-		{
-		default:
-		case TextureType_Default:
-		case TextureType_Diffuse:
+        {
+        default:
+        case TextureType_2D:
             if (metadata.dimension != TEX_DIMENSION_TEXTURE2D)
-			{
-			}
-			break;
-
-		case TextureType_CubeMap:
-			if (metadata.dimension != TEX_DIMENSION_TEXTURE2D || !metadata.IsCubemap())
-			{
-			}
+                Internal::PushHubReport(HubReport_Load, L"[Load] 2D 타입인데 파일이 2D 가 아님 (그대로 진행)");
             break;
 
-		case TextureType_LUT:
-			if (metadata.dimension != TEX_DIMENSION_TEXTURE1D)
-			{
-			}
-			break;
+        case TextureType_Cube:
+            if (metadata.dimension != TEX_DIMENSION_TEXTURE2D || !metadata.IsCubemap())
+                Internal::PushHubReport(HubReport_Load, L"[Load] Cube 타입인데 파일이 큐브맵이 아님 (그대로 진행, 6의 배수 장수가 아니면 렌더러가 거부)");
+            break;
 
-		case TextureType_VolumeMap:
-			if (metadata.dimension != TEX_DIMENSION_TEXTURE3D)
-			{
-			}
-			break;
-		}
+        case TextureType_1D:
+            if (metadata.dimension != TEX_DIMENSION_TEXTURE1D && metadata.height != 1)
+                Internal::PushHubReport(HubReport_Load, L"[Load] 1D 타입인데 파일 높이가 1 이 아님 (그대로 진행, 렌더러가 거부)");
+            break;
+
+        case TextureType_3D:
+            if (metadata.dimension != TEX_DIMENSION_TEXTURE3D)
+                Internal::PushHubReport(HubReport_Load, L"[Load] 3D 타입인데 파일이 3D 가 아님 (그대로 진행)");
+            break;
+        }
 
         texData.textureType = type;
 
@@ -414,6 +441,33 @@ namespace Hakko::DataHub
 
 
         return true;
+    }
+
+
+    MeshID LoadMesh(const wchar_t* path, MeshFileInfo* info)
+    {
+        const MeshID existing = GetMeshId(path);
+        if (existing != 0)
+            return existing;
+
+        Mesh data = {};
+        if (!ReadMeshFile(path, data, info))
+            return 0;
+
+        return CreateMesh(path, std::move(data));
+    }
+
+    TexID LoadTexture(const wchar_t* path, TextureFileFormat format, TextureType type, TextureColorSpace colorSpace)
+    {
+        const TexID existing = GetTexId(path);
+        if (existing != 0)
+            return existing;
+
+        Texture tex = {};
+        if (!ReadTextureFile(path, format, type, colorSpace, tex))
+            return 0;
+
+        return CreateTexture(path, std::move(tex));
     }
 
     #pragma endregion

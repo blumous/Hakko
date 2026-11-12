@@ -8,119 +8,66 @@ namespace Hakko::DataHub
 
     #pragma region Interface
 
-    MeshID LoadMesh(const wchar_t* path, MeshFileInfo* info)
-    {
-        const MeshID existing = GetMeshId(path);
-        if (existing != 0)
-            return existing;
-
-        Mesh data = {};
-        if (!ReadMeshFile(path, data, info))
-            return 0;
-
-        return CreateMesh(path, std::move(data));
-    }
-
-    TexID LoadTexture(const wchar_t* path, TextureFileFormat format, TextureType type)
-    {
-        const TexID existing = GetTexId(path);
-        if (existing != 0)
-            return existing;
-
-        Texture tex = {};
-        if (!ReadTextureFile(path, format, type, tex))
-            return 0;
-
-        return CreateTexture(path, std::move(tex));
-    }
-
     template <>
-    DataHub::DataBoxID DataHub::AddDataBox<DataHub::DataBox_RenderLight>(const DataBox_RenderLight& dataBox)
+    void DataHub::SendRTB<DataHub::RTB_UpdateResources>(const RTB_UpdateResources& RTB, uint8_t layer)
     {
-        DataBoxID idx;
-
-        if (blankedLightIdList.size() > 0)
-        {
-            idx = blankedLightIdList.back();
-            RenderLightList[idx] = dataBox;
-            blankedLightIdList.pop_back();
-        }
-        else
-        {
-            idx = RenderLightList.size();
-            RenderLightList.emplace_back(dataBox);
-        }
-
-        return idx;
+        flag_updateResources |= RTB.command;
     }
 
-    template <>
-    DataHub::DataBoxID DataHub::AddDataBox<DataHub::DataBox_RenderLightMatrix>(const DataBox_RenderLightMatrix& dataBox)
+    #pragma region SetLayerOption
+
+    void SetLayerBackground(TexID texId, uint8_t layer)
     {
-        DataBoxID idx;
-
-        if (blankedLightMatrixIdList.size() > 0)
+        if (layer >= LayerList.size() || texId >= textureIdLUT.size())
         {
-            idx = blankedLightMatrixIdList.back();
-            RenderLightMatrixList[idx] = dataBox;
-            blankedLightMatrixIdList.pop_back();
-        }
-        else
-        {
-            idx = RenderLightMatrixList.size();
-            RenderLightMatrixList.emplace_back(dataBox);
-        }
-
-        return idx;
-    }
-
-
-    void DataHub::RemoveDataBox(DataBoxTID tid, DataBoxID index)
-    {
-        if (tid == DataBoxType_DataBox_RenderLight)
-        {
-            blankedLightIdList.push_back(index);
-            return;
-        }
-        else if (tid == DataBoxType_DataBox_RenderLightMatrix)
-        {
-            blankedLightMatrixIdList.push_back(index);
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] SetLayerBackground: 레이어 / 텍스처 id 범위 밖 (무시됨)");
             return;
         }
 
-        DataBoxCustomizer::RemoveDataBox(tid, index);
+        LayerList[layer].backGround.bgTexId = texId;
     }
 
-
-    template <>
-    void DataHub::SendRTB<DataHub::RTB_UpdateResource>(const RTB_UpdateResource& RTB, uint8_t layer)
+    void SetLayerBackgroundColor(float r, float g, float b, float a, uint8_t layer)
     {
-        switch (RTB.command)
+        if (layer >= LayerList.size())
         {
-        case RTBCMD_UpdateResource_Upload:
-            flag_updateResources_Upload = true;   break;
-        
-        case RTBCMD_UpdateResource_Release:
-            flag_updateResources_Release = true;  break;
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] SetLayerBackgroundColor: 레이어 범위 밖 (무시됨)");
+            return;
         }
+
+        float* color = LayerList[layer].backGround.color;
+        color[0] = r;   color[1] = g;   color[2] = b;   color[3] = a;
     }
 
-    template <>
-    void DataHub::SendRTB<DataHub::RTB_UpdateProp>(const RTB_UpdateProp& RTB, uint8_t layer)
+    void SetLayerEnvMap(TexID texId, uint8_t layer)
     {
-        switch (RTB.command)
+        if (layer >= LayerList.size() || texId >= textureIdLUT.size())
         {
-        case RTBCMD_UpdateProp_FindOrBuild:
-            flag_updateProps_FindOrBuild = true;     break;
-        
-        case RTBCMD_UpdateProp_Release:
-            flag_updateProps_Release = true;         break;
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] SetLayerEnvMap: 레이어 / 텍스처 id 범위 밖 (무시됨)");
+            return;
         }
+
+        LayerList[layer].envTexId = texId;
     }
 
+    void SetLayerViewport(const Layer_Viewport& viewport, uint8_t layer)
+    {
+        if (layer >= LayerList.size())
+        {
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] SetLayerViewport: 레이어 범위 밖 (무시됨)");
+            return;
+        }
+
+        LayerList[layer].viewport = viewport;
+    }
+
+    #pragma endregion
+
+
+    #pragma region SetLayerData
 
     template <>
-    void DataHub::SendRTB<DataHub::RTB_SetRenderCondition>(const RTB_SetRenderCondition& RTB, uint8_t layer)
+    void DataHub::SendRTB<DataHub::RTB_SetCondition>(const RTB_SetCondition& RTB, uint8_t layer)
     {
         if (layer >= LayerList.size())
         {
@@ -132,7 +79,50 @@ namespace Hakko::DataHub
     }
 
     template <>
-    void DataHub::SendRTB<DataHub::RTB_SetRenderLight>(const RTB_SetRenderLight& RTB, uint8_t layer)
+    void DataHub::SendRTB<DataHub::RTB_SetCamera>(const RTB_SetCamera& RTB, uint8_t layer)
+    {
+        if (layer >= LayerList.size())
+        {
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] SendRTB: 레이어 범위 밖");
+            return;
+        }
+
+        RenderCondition& condition = LayerList[layer].condition;
+        condition.camera_View = RTB.view;
+        condition.camera_Proj = RTB.proj;
+        condition.camera_ViewProj = RTB.viewProj;
+        condition.camera_EyePos = RTB.eyePos;
+    }
+
+    template <>
+    void DataHub::SendRTB<DataHub::RTB_SetGlobalLight>(const RTB_SetGlobalLight& RTB, uint8_t layer)
+    {
+        if (layer >= LayerList.size())
+        {
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] SendRTB: 레이어 범위 밖");
+            return;
+        }
+
+        RenderCondition& condition = LayerList[layer].condition;
+        condition.global_LightAmbient = RTB.ambient;
+        condition.global_LightColor = RTB.color;
+        condition.global_LightDirection = RTB.direction;
+    }
+
+    template <>
+    void DataHub::SendRTB<DataHub::RTB_SetTime>(const RTB_SetTime& RTB, uint8_t layer)
+    {
+        if (layer >= LayerList.size())
+        {
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] SendRTB: 레이어 범위 밖");
+            return;
+        }
+
+        LayerList[layer].condition.global_TotalTime = RTB.totalTime;
+    }
+
+    template <>
+    void DataHub::SendRTB<DataHub::RTB_SetLight>(const RTB_SetLight& RTB, uint8_t layer)
     {
         if (layer >= LayerList.size())
         {
@@ -150,7 +140,7 @@ namespace Hakko::DataHub
     }
 
     template <>
-    void DataHub::SendRTB<DataHub::RTB_SetRenderLightMatrix>(const RTB_SetRenderLightMatrix& RTB, uint8_t layer)
+    void DataHub::SendRTB<DataHub::RTB_SetLightMatrix>(const RTB_SetLightMatrix& RTB, uint8_t layer)
     {
         if (layer >= LayerList.size())
         {
@@ -166,9 +156,14 @@ namespace Hakko::DataHub
 
         LayerList[layer].lightMatrixes[RTB.slot] = RTB.lightMatrix;
     }
+
+    #pragma endregion
+
+
+    #pragma region SendDrawRequest
     
     template <>
-    void DataHub::SendRTB<DataHub::RTB_DrawRequestOpaque>(const RTB_DrawRequestOpaque& RTB, uint8_t layer)
+    void DataHub::SendRTB<DataHub::RTB_DrawOPQ>(const RTB_DrawOPQ& RTB, uint8_t layer)
     {
         if (layer >= LayerList.size())
         {
@@ -201,7 +196,7 @@ namespace Hakko::DataHub
     }
 
     template <>
-    void DataHub::SendRTB<DataHub::RTB_DrawRequestTranslucent>(const RTB_DrawRequestTranslucent& RTB, uint8_t layer)
+    void DataHub::SendRTB<DataHub::RTB_DrawTP>(const RTB_DrawTP& RTB, uint8_t layer)
     {
         if (layer >= LayerList.size())
         {
@@ -233,7 +228,7 @@ namespace Hakko::DataHub
     }
 
     template <>
-    void DataHub::SendRTB<DataHub::RTB_DrawRequestScreen>(const RTB_DrawRequestScreen& RTB, uint8_t layer)
+    void DataHub::SendRTB<DataHub::RTB_DrawSC>(const RTB_DrawSC& RTB, uint8_t layer)
     {
         if (layer >= LayerList.size())
         {
@@ -259,58 +254,105 @@ namespace Hakko::DataHub
         LayerList[layer].actionSC.drawReqList.push_back(req);
     }
 
+    #pragma endregion
+
+
+    #pragma region MakeDrawRequest
+
+    #pragma region Helper
+
+    static DrawProp MakeDrawProp(const DrawOption& option, DrawProp_DepthUsage depthUsage, ShaderID defaultPSId)
+    {
+        DrawProp dp = {};
+        dp.depthUsage = depthUsage;
+        dp.cullType = option.cullType;
+        dp.blendType = option.blendType;
+        dp.fillType = DrawProp_FillType_Solid;
+        dp.depthBias = DrawProp_DepthBias_None;
+        dp.stecilOpt.useStencil = false;
+        dp.topology = DrawProp_Topology_TriangleList;
+        dp.vertexType = option.vertexType;
+        dp.VSId = option.VSId != 0 ? option.VSId : RESERVED_SHADER_WORLD_VS_ID;
+        dp.PSId = option.PSId != 0 ? option.PSId : defaultPSId;
+
+        return dp;
+    }
+
+    static TextureProp MakeTexProp(const DrawOption& option)
+    {
+        TextureProp tp = {};
+        tp.texId[0] = option.diffuseTexId;
+        tp.texId[1] = option.normalTexId;
+        tp.texId[2] = option.ORMTexId;
+        tp.texId[3] = option.emissionTexId;
+        for (size_t i = 4; i < TEXPROP_SLOT_COUNT; i++)
+            tp.texId[i] = option.flexibleTexId[i - 4];
+
+        return tp;
+    }
+
+    static bool RegisterProps(
+        const char* drawPropName, const DrawProp& dp, DrawPropID& dpId,
+        const char* texPropName, const TextureProp* tp, TexPropID& tpId)
+    {
+        if (dp.VSId >= shaderIdLUT.size() || dp.PSId >= shaderIdLUT.size())
+        {
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] MakeDrawRequestAndProps: 셰이더 id 범위 밖");
+            return false;
+        }
+
+        const auto dpKey = HashString(std::string_view(drawPropName));
+        const auto tpKey = tp != nullptr ? HashString(std::string_view(texPropName)) : 0U;
+
+        if (drawPropIdLUT.contains(dpKey) || (tp != nullptr && texPropIdLUT.contains(tpKey)))
+        {
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] MakeDrawRequestAndProps: 이미 있는 이름");
+            return false;
+        }
+
+        if (drawPropIdLUT.size() >= 0xFFFF || (tp != nullptr && texPropIdLUT.size() >= 0xFFFF))
+        {
+            Internal::PushHubReport(HubReport_Limit, L"[Hub] MakeDrawRequestAndProps: id 소진 (16비트)");
+            return false;
+        }
+
+        dpId = static_cast<DrawPropID>(drawPropIdLUT.size());
+        drawPropIdLUT.emplace(dpKey, dpId);
+        uploadDrawPropList.emplace_back(dp);
+
+        if (tp != nullptr)
+        {
+            tpId = static_cast<TexPropID>(texPropIdLUT.size());
+            texPropIdLUT.emplace(tpKey, tpId);
+            uploadTexPropList.emplace_back(*tp);
+        }
+
+        return true;
+    }
+
+    #pragma endregion
+
 
     bool MakeDrawRequestAndProps(
-        DrawOption option, 
-        const char* drawPropName, const char* texPropName, 
-        RTB_DrawRequestOpaque& rtb,
+        DrawOption option,
+        const char* drawPropName, const char* texPropName,
+        RTB_DrawOPQ& rtb,
         MeshID meshId, DataBoxID generalId, DataBoxID optionalId)
     {
         if (option.blendType != DrawProp_BlendType_None)
-            return false;
-
-
-        DrawProp dp = {};
-        dp.depthUsage = DrawProp_DepthUsage_Opaque;
-        dp.cullType = option.cullType;
-        dp.blendType = DrawProp_BlendType_None;
-        dp.stecilOpt.useStencil = false;
-        dp.vertexType = option.vertexType;
-        dp.VSId = option.VSId;
-        dp.PSId = option.PSId;
-
-        TextureProp tp = {};
-        tp.texId[0] = option.diffuseTexId;      tp.texMipLevels[0] = option.diffuseMipLevels;
-        tp.texId[1] = option.diffuseTexId;      tp.texMipLevels[1] = option.diffuseMipLevels;
-        tp.texId[2] = option.diffuseTexId;      tp.texMipLevels[2] = option.diffuseMipLevels;
-        tp.texId[3] = option.diffuseTexId;      tp.texMipLevels[3] = option.diffuseMipLevels;
-        for (size_t i = 4; i < TEXPROP_SLOT_COUNT; i++)
         {
-            tp.texId[i] = option.flexibleTexId[i - 4];  tp.texMipLevels[i] = option.flexibleMipLevels[i - 4];
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] MakeDrawRequestAndProps(OPQ): 블렌드 옵션은 Translucent 요청으로");
+            return false;
         }
-        
 
-        std::string_view dpSName(drawPropName);
-        auto dpKey = HashString(dpSName);
+        const DrawProp dp = MakeDrawProp(option, DrawProp_DepthUsage_Opaque, RESERVED_SHADER_WORLD_OPQ_PS_ID);
+        const TextureProp tp = MakeTexProp(option);
 
-        if (drawPropIdLUT.contains(dpKey))
+        DrawPropID dpId = 0;
+        TexPropID tpId = 0;
+        if (!RegisterProps(drawPropName, dp, dpId, texPropName, &tp, tpId))
             return false;
 
-        std::string_view tpSName(texPropName);
-        auto tpKey = HashString(tpSName);
-
-        if (texPropIdLUT.contains(tpKey))
-            return false;
-
-        
-        DrawPropID dpId = static_cast<DrawPropID>(drawPropIdLUT.size());
-        drawPropIdLUT.emplace(dpKey, dpId);
-        drawPropList.emplace_back(dp);
-
-        TexPropID tpId = static_cast<TexPropID>(texPropIdLUT.size());
-        texPropIdLUT.emplace(tpKey, tpId);
-        texPropList.emplace_back(tp);
-        
 
         rtb.alphaClip = option.alphaClipOrTranslucent;
         rtb.layer = 0U;
@@ -318,6 +360,7 @@ namespace Hakko::DataHub
         rtb.texProp = tpId;
         rtb.meshId = meshId;
         rtb.depth = 0U;
+        rtb.subMeshId = 0U;
         rtb.generalId = generalId;
         rtb.optionalId = optionalId;
 
@@ -326,93 +369,53 @@ namespace Hakko::DataHub
     }
 
     bool MakeDrawRequestAndProps(
-        DrawOption option, 
-        const char *drawPropName, const char *texPropName, 
-        RTB_DrawRequestTranslucent &rtb, 
+        DrawOption option,
+        const char *drawPropName, const char *texPropName,
+        RTB_DrawTP &rtb,
         MeshID meshId, DataBoxID generalId, DataBoxID optionalId)
     {
+        const DrawProp dp = MakeDrawProp(option, DrawProp_DepthUsage_Translucent, RESERVED_SHADER_WORLD_TP_PS_ID);
+        const TextureProp tp = MakeTexProp(option);
 
-        DrawProp dp = {};
-        dp.depthUsage = DrawProp_DepthUsage_Translucent;
-        dp.cullType = option.cullType;
-        dp.blendType = option.blendType;
-        dp.stecilOpt.useStencil = false;
-        dp.vertexType = option.vertexType;
-        dp.VSId = option.VSId;
-        dp.PSId = option.PSId;
-
-        TextureProp tp = {};
-        tp.texId[0] = option.diffuseTexId;      tp.texMipLevels[0] = option.diffuseMipLevels;
-        tp.texId[1] = option.diffuseTexId;      tp.texMipLevels[1] = option.diffuseMipLevels;
-        tp.texId[2] = option.diffuseTexId;      tp.texMipLevels[2] = option.diffuseMipLevels;
-        tp.texId[3] = option.diffuseTexId;      tp.texMipLevels[3] = option.diffuseMipLevels;
-        for (size_t i = 4; i < TEXPROP_SLOT_COUNT; i++)
-        {
-            tp.texId[i] = option.flexibleTexId[i - 4];  tp.texMipLevels[i] = option.flexibleMipLevels[i - 4];
-        }
-        
-
-        std::string_view dpSName(drawPropName);
-        auto dpKey = HashString(dpSName);
-
-        if (drawPropIdLUT.contains(dpKey))
+        DrawPropID dpId = 0;
+        TexPropID tpId = 0;
+        if (!RegisterProps(drawPropName, dp, dpId, texPropName, &tp, tpId))
             return false;
 
-        std::string_view tpSName(texPropName);
-        auto tpKey = HashString(tpSName);
-
-        if (texPropIdLUT.contains(tpKey))
-            return false;
-
-        
-        DrawPropID dpId = static_cast<DrawPropID>(drawPropIdLUT.size());
-        drawPropIdLUT.emplace(dpKey, dpId);
-        drawPropList.emplace_back(dp);
-
-        TexPropID tpId = static_cast<TexPropID>(texPropIdLUT.size());
-        texPropIdLUT.emplace(tpKey, tpId);
-        texPropList.emplace_back(tp);
-        
 
         rtb.depth = 0U;
         rtb.drawProp = dpId;
         rtb.texProp = tpId;
         rtb.iid = 0U;
         rtb.meshId = meshId;
+        rtb.subMeshId = 0U;
         rtb.generalId = generalId;
         rtb.optionalId = optionalId;
 
 
         return true;
     }
-    
+
     bool MakeDrawRequestAndProps(
-        DrawOption option, 
+        DrawOption option,
         const char* drawPropName,
-        RTB_DrawRequestScreen& rtb,
+        RTB_DrawSC& rtb,
         TexID texId, DataBoxID screenId)
     {
+        if (option.VSId == 0 || option.PSId == 0)
+        {
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] MakeDrawRequestAndProps(SC): 스크린은 기본 제공 셰이더가 없음 (VSId / PSId 필수)");
+            return false;
+        }
 
-        DrawProp dp = {};
-        dp.cullType = option.cullType;
-        dp.blendType = option.blendType;
-        dp.stecilOpt.useStencil = false;
+        DrawProp dp = MakeDrawProp(option, DrawProp_DepthUsage_Screen, 0);
         dp.vertexType = VertexType_Simple;
-        dp.VSId = option.VSId;
-        dp.PSId = option.PSId;
-        
 
-        std::string_view dpSName(drawPropName);
-        auto dpKey = HashString(dpSName);
-
-        if (drawPropIdLUT.contains(dpKey))
+        DrawPropID dpId = 0;
+        TexPropID tpId = 0;
+        if (!RegisterProps(drawPropName, dp, dpId, nullptr, nullptr, tpId))
             return false;
 
-        
-        DrawPropID dpId = static_cast<DrawPropID>(drawPropIdLUT.size());
-        drawPropIdLUT.emplace(dpKey, dpId);
-        drawPropList.emplace_back(dp);
-        
 
         rtb.layer = 0U;
         rtb.translucent = option.alphaClipOrTranslucent;
@@ -424,6 +427,52 @@ namespace Hakko::DataHub
 
         return true;
     }
+
+    #pragma endregion
+
+
+    #pragma region ClearRequests
+
+    void ClearOpaqueDrawRequests(uint8_t layer)
+    {
+        if (layer >= LayerList.size())
+        {
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] ClearDrawRequests: 레이어 범위 밖");
+            return;
+        }
+
+        LayerList[layer].actionOPQ.drawReqList.clear();
+    }
+
+    void ClearTranslucentDrawRequests(uint8_t layer)
+    {
+        if (layer >= LayerList.size())
+        {
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] ClearDrawRequests: 레이어 범위 밖");
+            return;
+        }
+
+        LayerList[layer].actionTP.drawReqList.clear();
+    }
+
+    void ClearScreenDrawRequests(uint8_t layer)
+    {
+        if (layer >= LayerList.size())
+        {
+            Internal::PushHubReport(HubReport_Contract, L"[Hub] ClearDrawRequests: 레이어 범위 밖");
+            return;
+        }
+
+        LayerList[layer].actionSC.drawReqList.clear();
+    }
+
+
+    void ClearDrawRequests(ActionID action, uint8_t layer)
+    {
+        Internal::PushHubReport(HubReport_Contract, L"[Hub] ClearDrawRequests: 액션 id 지정은 커스텀 파이프라인용 (미구현), 빌트인은 Clear~DrawRequests 사용");
+    }
+
+    #pragma endregion
 
     #pragma endregion
 
