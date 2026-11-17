@@ -11,6 +11,7 @@ Hakko 는 아래 오픈소스 라이브러리를 사용합니다. 의존성은 �
 | DirectX-Headers (d3dx12.h 포함) | 1.619.1 | MIT | https://github.com/microsoft/DirectX-Headers |
 | DirectXMath | 2026-06-12 | MIT | https://github.com/microsoft/DirectXMath |
 | DirectX Shader Compiler (dxcompiler.dll) | 2026-05-27 | LLVM Release License (University of Illinois / NCSA) | https://github.com/microsoft/DirectXShaderCompiler |
+| Dear ImGui (선택: ImGui 모듈을 켠 빌드에만 포함) | 1.92.8 | MIT | https://github.com/ocornut/imgui |
 
 `dxil.dll` (셰이더 서명기) 은 DirectX Shader Compiler 패키지에 포함된 Microsoft 바이너리로, Microsoft 의 재배포 조건에 따라 애플리케이션과 함께 배포할 수 있습니다. 이 레포에는 포함되지 않으며 빌드 시 vcpkg 가 받아옵니다.
 
@@ -243,6 +244,32 @@ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
 CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH THE
+SOFTWARE.
+```
+
+### Dear ImGui
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2014-2026 Omar Cornut
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 

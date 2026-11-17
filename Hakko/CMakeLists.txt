@@ -42,6 +42,15 @@ target_link_libraries(Hakko
             assimp::assimp
         )
 
+if(HAKKO_USE_IMGUI)
+    find_package(imgui CONFIG REQUIRED)
+    target_sources(Hakko PRIVATE Render/private/D3D12/D3D12Renderer_ImGui.cpp)
+    target_link_libraries(Hakko PUBLIC imgui::imgui)
+    target_compile_definitions(Hakko PUBLIC RENDER_IMGUI_MODE=1)
+else()
+    target_compile_definitions(Hakko PUBLIC RENDER_IMGUI_MODE=0)
+endif()
+
 if(MSVC)
     target_compile_options(Hakko PUBLIC /utf-8 /permissive-)
 endif()

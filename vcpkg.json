@@ -1,11 +1,22 @@
 {
   "name": "hakko",
-  "version-string": "0.1.0-alpha",
+  "version-string": "0.2.0-alpha",
   "dependencies": [
     "directx-headers",
     "directxtex",
     "directx-dxc",
     "assimp"
   ],
+  "features": {
+    "imgui": {
+      "description": "ImGui module (renderer draws ImGui draw data)",
+      "dependencies": [
+        {
+          "name": "imgui",
+          "features": [ "win32-binding", "docking-experimental" ]
+        }
+      ]
+    }
+  },
   "builtin-baseline": "cac7d29f246eb789a84004fbfc11bb00db1aa89b"
 }

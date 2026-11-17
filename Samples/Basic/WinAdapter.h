@@ -3,8 +3,8 @@
 #include <windows.h>
 
 
-inline const wchar_t g_wndTitle[] = L"DXNoTemplate";
-inline const wchar_t g_wndClass[] = L"DXNoTemplate";
+inline const wchar_t g_wndTitle[] = L"Hakko Sample";
+inline const wchar_t g_wndClass[] = L"HakkoSample";
 
 inline HWND g_hWnd = nullptr;
 

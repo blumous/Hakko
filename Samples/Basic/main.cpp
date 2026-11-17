@@ -3,6 +3,11 @@
 #include <windows.h>
 
 #include "WinAdapter.h"
+#include "RenderOption.h"
+
+#if RENDER_IMGUI_MODE == RENDER_IMGUI_ENABLE
+extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+#endif
 
 
 inline int width = 1280;
@@ -69,17 +74,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     {
         if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
         {
-            if ((WM_MOUSEFIRST <= msg.message && msg.message <= WM_MOUSELAST)
-                || (WM_KEYFIRST <= msg.message && msg.message <= WM_KEYUP))
-            {
-                winCore.OnWndInput(msg);
-            }
-
-            else
-            {
-                TranslateMessage(&msg);
-                DispatchMessage(&msg);
-            }
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
         }
         else
         {
@@ -145,6 +141,19 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+#if RENDER_IMGUI_MODE == RENDER_IMGUI_ENABLE
+    if (ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam))
+        return TRUE;
+#endif
+
+    if ((WM_MOUSEFIRST <= message && message <= WM_MOUSELAST)
+        || (WM_KEYFIRST <= message && message <= WM_KEYUP))
+    {
+        MSG msg = { hWnd, message, wParam, lParam };
+        winCore.OnWndInput(msg);
+        return 0;
+    }
+
     switch (message)
     {
     case WM_SIZE:

@@ -96,13 +96,11 @@ namespace Hakko::DataHub
             *info = {};
 
         std::string path;
-        {
-            const int n = WideCharToMultiByte(CP_UTF8, 0, filename, -1, nullptr, 0, nullptr, nullptr);
-            if (n <= 1)
-                return false;
-            path.resize((size_t)n - 1);
-            WideCharToMultiByte(CP_UTF8, 0, filename, -1, path.data(), n, nullptr, nullptr);
-        }
+        const int pathLen = WideCharToMultiByte(CP_UTF8, 0, filename, -1, nullptr, 0, nullptr, nullptr);
+        if (pathLen <= 1)
+            return false;
+        path.resize((size_t)pathLen - 1);
+        WideCharToMultiByte(CP_UTF8, 0, filename, -1, path.data(), pathLen, nullptr, nullptr);
 
 
         Assimp::Importer importer;
